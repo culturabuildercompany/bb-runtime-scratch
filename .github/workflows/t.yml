@@ -1,0 +1,7 @@
+name: t
+on: [push, workflow_dispatch]
+jobs:
+  a:
+    runs-on: windows-latest
+    steps:
+      - run: echo hello; cmake --version
