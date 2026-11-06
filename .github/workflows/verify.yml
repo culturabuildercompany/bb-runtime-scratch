@@ -42,7 +42,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p pkg
-          gh release download verify-package --pattern win-unpacked.zip --dir pkg
+          gh release download verify-package --repo "$GITHUB_REPOSITORY" --pattern win-unpacked.zip --dir pkg
           unzip -q pkg/win-unpacked.zip -d .
           ls dist/win-unpacked | head
 
