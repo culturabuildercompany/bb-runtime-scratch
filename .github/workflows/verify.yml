@@ -16,9 +16,15 @@ jobs:
         env:
           BB_TOKEN: ${{ secrets.BB_TOKEN }}
         run: |
-          git clone --quiet "https://x-access-token:${BB_TOKEN}@github.com/culturabuildercompany/bbots.git" repo
+          git init -q repo
           cd repo
-          git checkout --quiet e00fa078a88d7c7cab872d863a80903389e43067
+          git remote add origin "https://x-access-token:${BB_TOKEN}@github.com/culturabuildercompany/bbots.git"
+          for attempt in 1 2 3; do
+            git fetch -q --depth 1 origin e00fa078a88d7c7cab872d863a80903389e43067 && break
+            echo "fetch attempt $attempt failed"
+            sleep 5
+          done
+          git checkout -q FETCH_HEAD
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
