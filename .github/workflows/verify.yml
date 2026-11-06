@@ -1,0 +1,61 @@
+name: verify package
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - name: Check out private repository
+        shell: bash
+        env:
+          BB_TOKEN: ${{ secrets.BB_TOKEN }}
+        run: |
+          git clone --quiet "https://x-access-token:${BB_TOKEN}@github.com/culturabuildercompany/bbots.git" repo
+          cd repo
+          git checkout --quiet e00fa078a88d7c7cab872d863a80903389e43067
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Install dependencies
+        working-directory: repo
+        run: bun install --frozen-lockfile
+
+      - name: Fetch package
+        working-directory: repo
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p pkg
+          gh release download verify-package --pattern win-unpacked.zip --dir pkg
+          unzip -q pkg/win-unpacked.zip -d .
+          ls dist/win-unpacked | head
+
+      - name: Verify package
+        working-directory: repo
+        shell: bash
+        run: |
+          set +e
+          bun tooling/verify-windows-package.ts dist/win-unpacked > verify.log 2>&1
+          status=$?
+          cat verify.log
+          echo "verifier exit code: $status"
+          exit $status
+
+      - name: Upload log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-log
+          path: repo/verify.log
+          if-no-files-found: warn
+          retention-days: 3
