@@ -1,0 +1,109 @@
+name: build win runtime
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 110
+    steps:
+      - name: Check out private repository
+        shell: bash
+        env:
+          BB_TOKEN: ${{ secrets.BB_TOKEN }}
+        run: |
+          git clone --quiet "https://x-access-token:${BB_TOKEN}@github.com/culturabuildercompany/bbots.git" repo
+          cd repo
+          git checkout --quiet e00fa078a88d7c7cab872d863a80903389e43067
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Set up Windows build dependencies
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-boost
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-cppwinrt
+            mingw-w64-ucrt-x86_64-curl-winssl
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-graphviz
+            mingw-w64-ucrt-x86_64-MinHook
+            mingw-w64-ucrt-x86_64-miniupnpc
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-nlohmann-json
+            mingw-w64-ucrt-x86_64-onevpl
+            mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-opus
+            mingw-w64-ucrt-x86_64-toolchain
+
+      - name: Export Windows tool paths
+        shell: pwsh
+        working-directory: repo
+        run: |
+          "BUILDERSBOT_BUN_DIR=$(Split-Path (Get-Command bun).Source -Parent)" >> $env:GITHUB_ENV
+          "BUILDERSBOT_CARGO_DIR=$(Split-Path (Get-Command cargo).Source -Parent)" >> $env:GITHUB_ENV
+          "BUILDERSBOT_NODE_DIR=$(Split-Path (Get-Command node).Source -Parent)" >> $env:GITHUB_ENV
+          "BUILDERSBOT_PERL_DIR=$(Split-Path (Get-Command perl).Source -Parent)" >> $env:GITHUB_ENV
+
+      - name: Install dependencies
+        working-directory: repo
+        run: bun install --frozen-lockfile
+
+      - name: Build runtime on Windows
+        working-directory: repo
+        shell: msys2 {0}
+        env:
+          CMAKE_GENERATOR: Ninja
+        run: |
+          native_perl="$(cygpath "$BUILDERSBOT_PERL_DIR")/perl.exe"
+          "$native_perl" -e 'die "Windows Perl is required\n" unless $^O eq "MSWin32";'
+          export OPENSSL_SRC_PERL="$(cygpath -w "$native_perl")"
+          export PATH="$PATH:$(cygpath "$BUILDERSBOT_BUN_DIR"):$(cygpath "$BUILDERSBOT_CARGO_DIR"):$(cygpath "$BUILDERSBOT_NODE_DIR")"
+          bun run build:remote-desktop-runtime
+
+      - name: Verify runtime
+        working-directory: repo
+        shell: bash
+        run: bun tooling/verify-remote-desktop-runtime.ts --windows
+
+      - name: Package archive
+        working-directory: repo
+        shell: bash
+        run: |
+          bun tooling/package-remote-desktop-runtime.ts win32 x64
+          ls -l build/remote-desktop-release
+          sha256sum build/remote-desktop-release/*.tar.gz
+
+      - name: Upload runtime tree
+        uses: actions/upload-artifact@v4
+        with:
+          name: remote-desktop-runtime-win32-x64-tree
+          path: repo/build/remote-desktop-runtime
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: remote-desktop-runtime-win32-x64-archive
+          path: repo/build/remote-desktop-release/*.tar.gz
+          if-no-files-found: error
+          retention-days: 3
